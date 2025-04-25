@@ -1,4 +1,3 @@
-#Credits: Christopher Gallinger-Long
 import os
 import App
 import time
@@ -16,35 +15,47 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 
-
 def get_login():
+    """
+    Retrieve login credentials from the popup application.
+    
+    Returns:
+        list: A list containing the username and password.
+    """
     login_info = App.login_info
-
     return login_info
 
+
 def login_and_verify(driver, login):
+    """
+    Log in to TDX service portal and complete DUO verification.
+    
+    Args:
+        driver: Selenium WebDriver instance.
+        login: List containing username and password credentials.
+    """
     driver.get('https://service.uoregon.edu/TDNext/Home/Desktop/Desktop.aspx')
 
     try:
-        # Detect username field by HTML ID and enter login info
+        # Enter username
         username_field = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, 'username'))
         )
         username_field.send_keys(login[0])
 
-        # Detect password field by HTML ID and enter login info
+        # Enter password
         password_field = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, 'password'))
         )
         password_field.send_keys(login[1])
 
-        # Detect login button and press it
+        # Click login button
         login_button = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, '//input[@type="submit"]'))
         )
         login_button.click()
         
-        # Wait for the page to load and DUO verification to be completed
+        # Wait for DUO verification code and display it
         verification_code = WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CLASS_NAME, 'verification-code'))
         )
@@ -54,7 +65,7 @@ def login_and_verify(driver, login):
         print(f'DUO Verification Code: {verification_code}')
 
         try:
-            # Wait for the specific element in the content you want to scrape
+            # Handle "trust this browser" option if it appears
             time.sleep(10)
             WebDriverWait(driver, 60).until(
                 EC.presence_of_element_located((By.ID, 'trust-browser-button'))
@@ -62,16 +73,21 @@ def login_and_verify(driver, login):
             yes_device_button = driver.find_element(By.ID, 'trust-browser-button')
             yes_device_button.click()
         except TimeoutException:
-            print("Device check not found, proceeding without it.")
+            print("Device trust prompt not found, proceeding without it.")
         
     except Exception as e:
         print(f"An error occurred during login: {e}")
-    
 
 
 def check_for_ticket(driver):
+    """
+    Check if there are any new tickets in the system.
+    
+    Args:
+        driver: Selenium WebDriver instance.
+    """
     try:
-        # Check if content is within an iframe switch if true
+        # Switch to iframe if present
         iframes = driver.find_elements(By.TAG_NAME, 'iframe')
         if iframes:
             driver.switch_to.frame(iframes[0])
@@ -79,7 +95,7 @@ def check_for_ticket(driver):
         time.sleep(5)
 
         try:
-            # Wait for the specific element in the content you want to scrape
+            # Look for "New" status in ticket table
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, '//td[text()="New"]'))
             )
@@ -95,26 +111,33 @@ def check_for_ticket(driver):
     except Exception as e:
         print(f"An error occurred: {e}")
     finally:
-        # Ensure we switch back to the default content
+        # Return to main content
         driver.switch_to.default_content()
 
+
 def check_ticket_counts(driver):
+    """
+    Retrieve ticket counts for each person from TDX report.
+    
+    Args:
+        driver: Selenium WebDriver instance.
+    """
     try:
         # Step 1: Switch to iframe if it exists
         iframes = driver.find_elements(By.TAG_NAME, 'iframe')
         if iframes:
             driver.switch_to.frame(iframes[0])
 
-        # Step 2: Navigate directly to the report page using window.location.href
+        # Step 2: Navigate directly to the ticket count report
         driver.execute_script("""
             const reportUrl = "/TDNext/Apps/430/Reporting/ReportViewer?ReportID=102376";
             window.location.href = reportUrl;
         """)
 
         # Step 3: Wait for navigation to complete
-        time.sleep(10)  # Use WebDriverWait for production use
+        time.sleep(10)
 
-        # Step 4: Extract data after the new page has loaded
+        # Step 4: Extract ticket count data
         ticket_data = driver.execute_script("""
             const rows = document.querySelectorAll('tr');
             const ticketData = [];
@@ -132,16 +155,8 @@ def check_ticket_counts(driver):
 
             return ticketData;
         """)
-        """
-        # Step 5: Display results in Python
-        if ticket_data:
-            print("Extracted ticket data:")
-            for item in ticket_data:
-                print(f"Name: {item['name']}, Ticket Count: {item['count']}")
-        else:
-            print("No ticket data extracted.")
-        """
-        # Inside your check_ticket_counts function, replace the "Step 5" section with:
+
+        # Export data if available
         if ticket_data:
             export_to_excel(ticket_data)
         else:
@@ -154,23 +169,23 @@ def check_ticket_counts(driver):
     except Exception as e:
         print(f"An error occurred: {e}")
     finally:
-        # Always return to the top-level browsing context
+        # Return to main content
         driver.switch_to.default_content()
+
 
 def export_to_excel(ticket_data, excel_file="ticket_counts.xlsx", append=True):
     """
-    Export ticket data to an Excel file.
+    Export ticket count data to an Excel file.
     
-    Parameters:
-    - ticket_data: List of dictionaries with 'name' and 'count' keys
-    - excel_file: Filename for the Excel file (default: ticket_counts.xlsx)
-    - append: If True, append to existing file; if False, create new file (default: True)
-    
+    Args:
+        ticket_data: List of dictionaries with 'name' and 'count' keys.
+        excel_file: Filename for the Excel output file (default: ticket_counts.xlsx).
+        append: If True, append to existing file; if False, create new file (default: True).
+        
     Returns:
-    - True if export was successful, False otherwise
+        bool: True if export was successful, False otherwise.
     """
     try:
-        
         # Convert to pandas DataFrame
         data = [{"Name": item['name'], "Ticket Count": item['count']} for item in ticket_data]
         df = pd.DataFrame(data)
@@ -198,7 +213,13 @@ def export_to_excel(ticket_data, excel_file="ticket_counts.xlsx", append=True):
         print(f"Error exporting to Excel: {e}")
         return False
 
+
 def main():
+    """
+    Main function that initializes the WebDriver, handles login,
+    and runs the ticket checking process on an hourly schedule.
+    """
+    # Configure Chrome WebDriver
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
     #options.add_argument('--headless')
@@ -206,11 +227,13 @@ def main():
 
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
+    # Wait for login information from the app
     while not App.login_info:
         time.sleep(1)
     login = get_login()
 
     try:
+        # Perform login and verification
         login_and_verify(driver, login)
         time.sleep(10)
         print("Press ESC to exit")
@@ -223,7 +246,7 @@ def main():
             # Get current time
             now = datetime.now()
             
-            # Run the check immediately the first time
+            # Run the check immediately
             check_ticket_counts(driver)
             print(f"Checked tickets at {now.strftime('%Y-%m-%d %H:%M:%S')}")
             
@@ -231,13 +254,13 @@ def main():
             next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
             wait_seconds = (next_hour - datetime.now()).total_seconds()
             
-            # Don't wait if it's negative (can happen if calculations took time)
+            # Ensure wait time is not negative
             if wait_seconds < 0:
                 wait_seconds = 0
                 
             print(f"Waiting {wait_seconds:.1f} seconds until next check at {next_hour.strftime('%H:00:00')}")
             
-            # Check every 5 seconds if ESC is pressed while waiting
+            # Check periodically for ESC keypress while waiting
             wait_start = time.time()
             while time.time() - wait_start < wait_seconds:
                 if keyboard.is_pressed('esc'):
@@ -258,7 +281,8 @@ if __name__ == '__main__':
 
     # Give Flask a moment to start up
     time.sleep(1)
-    # Open the web browser
+    
+    # Open the web browser for login dialog
     App.open_browser()
 
     # Run the main function
